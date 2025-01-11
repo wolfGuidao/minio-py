@@ -505,21 +505,17 @@ class IamAwsProvider(Provider):
             headers = {"X-aws-ec2-metadata-token": token} if token else None
 
             # Get role name
-            res = _urlopen(
-                self._http_client,
-                "GET",
-                urlunsplit(
-                    url_replace(
-                        urlsplit(url),
-                        path="/latest/meta-data/iam/security-credentials/",
-                    ),
+            url = urlunsplit(
+                url_replace(
+                    urlsplit(url),
+                    path="/latest/meta-data/iam/security-credentials/",
                 ),
-                headers=headers,
             )
+            res = _urlopen(self._http_client, "GET", url, headers=headers)
             role_names = res.data.decode("utf-8").split("\n")
             if not role_names:
                 raise ValueError(f"no IAM roles attached to EC2 service {url}")
-            url += "/" + role_names[0].strip("\r")
+            url += role_names[0].strip("\r")
         if not url:
             raise ValueError("url is empty; this should not happen")
         self._credentials = self.fetch(url, headers=headers)
@@ -654,9 +650,10 @@ class WebIdentityClientGrantsProvider(Provider):
         if self._policy:
             query_params["Policy"] = self._policy
 
+        access_token = jwt.get("access_token") or jwt.get("id_token", "")
         if self._is_web_identity():
             query_params["Action"] = "AssumeRoleWithWebIdentity"
-            query_params["WebIdentityToken"] = jwt.get("id_token", "")
+            query_params["WebIdentityToken"] = access_token
             if self._role_arn:
                 query_params["RoleArn"] = self._role_arn
                 query_params["RoleSessionName"] = (
@@ -666,7 +663,7 @@ class WebIdentityClientGrantsProvider(Provider):
                 )
         else:
             query_params["Action"] = "AssumeRoleWithClientGrants"
-            query_params["Token"] = jwt.get("id_token", "")
+            query_params["Token"] = access_token
 
         url = self._sts_endpoint + "?" + urlencode(query_params)
         res = _urlopen(self._http_client, "POST", url)
